@@ -167,6 +167,9 @@ class gerrit (
   $configure_gitweb         = true,
   $database_backend         = 'h2',
   $database_hostname        = undef,
+  $httpd_protocol       = 'http',
+  $httpd_hostname       = '*',
+  $httpd_port           = 8080,
   $database_name            = 'db/ReviewDB',
   $database_password        = undef,
   $database_username        = undef,
@@ -199,7 +202,7 @@ class gerrit (
   $mysql_java_connector     = $gerrit::params::mysql_java_connector,
   $mysql_java_package       = $gerrit::params::mysql_java_package,
   $user                     = 'gerrit',
-  $extra_folders            = ['plugins']
+  $extra_folders            = ['hooks', 'plugins']
 ) inherits gerrit::params {
 
   if $install_user {
@@ -207,14 +210,14 @@ class gerrit (
       $user:
         managehome => true,
         home       => $target,
-    } -> Exec ['install_gerrit']
+        } -> Exec ['install_gerrit']
   }
 
   if $install_java {
     package{
       $java_package:
         ensure => installed,
-    } -> Exec ['install_gerrit']
+        } -> Exec ['install_gerrit']
   }
 
   if $install_java_mysql {
@@ -222,24 +225,24 @@ class gerrit (
       $mysql_java_package:
         ensure  => installed,
         require => Exec ['install_gerrit'],
-    } ->
-    file {
-      "${target}/lib/mysql-connector-java.jar" :
-        ensure => link,
-        target => $mysql_java_connector,
-    }
+        } ->
+        file {
+          "${target}/lib/mysql-connector-java.jar" :
+            ensure => link,
+            target => $mysql_java_connector,
+        }
   }
 
   if $install_git {
     package{
       $git_package:
         ensure => installed,
-    } -> Exec ['install_gerrit']
+        } -> Exec ['install_gerrit']
   }
 
   exec {
     'install_gerrit':
-      command => "java -jar ${source} init -d ${target}",
+      command => "java -jar ${source} init -d ${target} --batch",
       creates => "${target}/bin/gerrit.sh",
       user    => $user,
       path    => $::path,
@@ -247,7 +250,7 @@ class gerrit (
 
   exec {
     'reload_gerrit':
-      command     => "java -jar ${target}/bin/gerrit.war init -d ${target}",
+      command     => "java -jar ${target}/bin/gerrit.war init -d ${target} --batch",
       refreshonly => true,
       user        => $user,
       path        => $::path,
@@ -267,8 +270,16 @@ class gerrit (
     }
   }
 
+  gerrit::folder { $extra_folders : }
+
   Gerrit::Config {
     file    => "${target}/etc/gerrit.config",
+  }
+
+  gerrit::config {
+    'httpd.listenUrl':
+      ensure      => present,
+      value => "${httpd_protocol}://${httpd_hostname}:${httpd_port}",
   }
 
   gerrit::config {
